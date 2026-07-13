@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Guest Sketchbook</title>
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --paper-color: #ffffff;
+            --accent: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--accent);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        h1 { margin-bottom: 5px; }
+        p { margin-bottom: 20px; color: #666; }
+
+        .sketchbook-container {
+            background: var(--paper-color);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            max-width: 100%;
+        }
+
+        /* Toolbar styles */
+        .toolbar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .toolbar button, .toolbar input {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .toolbar button {
+            background-color: #eee;
+            transition: background 0.2s;
+        }
+
+        .toolbar button:hover { background-color: #ddd; }
+        
+        .btn-submit {
+            background-color: #28a745 !important;
+            color: white;
+            border: none !important;
+            font-weight: bold;
+        }
+        
+        .btn-submit:hover { background-color: #218838 !important; }
+
+        /* Canvas styles */
+        canvas {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            cursor: crosshair;
+            background-color: #fff;
+            touch-action: none; /* Prevents scrolling when drawing on mobile */
+        }
+
+        /* Gallery styles */
+        .gallery-section {
+            margin-top: 40px;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .gallery img {
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background: #fff;
+            border: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Guest Sketchbook</h1>
+    <p>Leave your mark! Draw something below and add it to the gallery.</p>
+
+    <div class="sketchbook-container">
+        <div class="toolbar">
+            <label for="colorPicker">Color:</label>
+            <input type="color" id="colorPicker" value="#000000">
+            
+            <label for="brushSize">Brush Size:</label>
+            <input type="range" id="brushSize" min="1" max="20" value="3">
+            
+            <button id="clearBtn">Clear Page</button>
+            <button id="submitBtn" class="btn-submit">Submit Drawing</button>
+        </div>
+
+        <!-- The Drawing Canvas -->
+        <canvas id="drawingPad" width="600" height="400"></canvas>
+    </div>
+
+    <div class="gallery-section">
+        <h2>Recent Sketches</h2>
+        <div id="gallery" class="gallery">
+            <!-- Saved images will appear here -->
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('drawingPad');
+        const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
+        const brushSize = document.getElementById('brushSize');
+        const clearBtn = document.getElementById('clearBtn');
+        const submitBtn = document.getElementById('submitBtn');
+        const gallery = document.getElementById('gallery');
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // Initialize Canvas Background (so it saves as white, not transparent)
+        function initCanvas() {
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        initCanvas();
+
+        // Get coordinates adjusted for canvas position
+        function getCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            if (e.touches && e.touches.length > 0) {
+                return {
+                    x: e.touches[0].clientX - rect.left,
+                    y: e.touches[0].clientY - rect.top
+                };
+            }
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            const { x, y } = getCoordinates(e);
+            [lastX, lastY] = [x, y];
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault(); // Prevent scrolling on touch devices
+            
+            const { x, y } = getCoordinates(e);
+            
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = colorPicker.value;
+            ctx.lineWidth = brushSize.value;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+            
+            [lastX, lastY] = [x, y];
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        // Mouse Events
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // Touch Events (Mobile Support)
+        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing);
+
+        // Clear Canvas
+        clearBtn.addEventListener('click', initCanvas);
+
+        // --- SAVING AND GALLERY LOGIC --- //
+
+        // Load existing sketches from LocalStorage
+        function loadGallery() {
+            gallery.innerHTML = '';
+            const savedSketches = JSON.parse(localStorage.getItem('guestSketches')) || [];
+            
+            // Reverse so newest is first
+            savedSketches.reverse().forEach(imgData => {
+                const img = document.createElement('img');
+                img.src = imgData;
+                gallery.appendChild(img);
+            });
+        }
+
+        // Submit Drawing
+        submitBtn.addEventListener('click', () => {
+            // Convert canvas to a Base64 image URL
+            const dataURL = canvas.toDataURL('image/png');
+            
+            // Save to LocalStorage
+            let savedSketches = JSON.parse(localStorage.getItem('guestSketches')) || [];
+            savedSketches.push(dataURL);
+            localStorage.setItem('guestSketches', JSON.stringify(savedSketches));
+            
+            // Refresh Gallery and clear canvas
+            loadGallery();
+            initCanvas();
+            alert('Sketch added to the gallery!');
+        });
+
+        // Initial Load
+        loadGallery();
+    </script>
+</body>
+</html>
