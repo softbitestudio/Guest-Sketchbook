@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Single Canvas Guestbook</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #f0f0f0;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            cursor: crosshair;
+            background: white;
+            touch-action: none;
+        }
+        .controls {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+        #currentDrawing {
+            border: 1px solid #ccc;
+            max-width: 600px;
+            background: white;
+            min-height: 200px;
+        }
+        .status { color: #666; font-size: 0.9em; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h1>Draw Something!</h1>
+    
+    <div class="container">
+        <div class="controls">
+            <input type="color" id="color" value="#000000">
+            <input type="range" id="size" min="1" max="20" value="3">
+            <button id="clear">Clear</button>
+            <button id="submit">Submit & Replace Existing</button>
+        </div>
+        <canvas id="pad" width="600" height="400"></canvas>
+        <div id="status" class="status"></div>
+    </div>
+
+    <h2>Current Guest Drawing</h2>
+    <img id="currentDrawing" src="" alt="Loading current drawing...">
+
+    <script>
+        // --- IMPORTANT: ADD YOUR JSONBIN DETAILS HERE --- //
+        const BIN_ID = '6a5458edf5f4af5e29862fef'; 
+        const API_KEY = '$2a$10$46hV8ZRUKm8a66LhoZw3ReAyQNGeeZ7oaGhINa4jxpHQz2FdjH/tm';
+        const API_URL = `https://api.jsonbin.io/v3/b/${6a5458edf5f4af5e29862fef}`;
+
+        const canvas = document.getElementById('pad');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const currentDrawingImg = document.getElementById('currentDrawing');
+        
+        let isDrawing = false;
+        let lastX = 0, lastY = 0;
+
+        // Initialize white background
+        function initCanvas() {
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        initCanvas();
+
+        // Drawing Logic
+        function getCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: (e.touches ? e.touches[0].clientX : e.clientX) - rect.left,
+                y: (e.touches ? e.touches[0].clientY : e.clientY) - rect.top
+            };
+        }
+
+        canvas.addEventListener('mousedown', (e) => { isDrawing = true; const {x,y} = getCoords(e); [lastX, lastY] = [x, y]; });
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const {x, y} = getCoords(e);
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = document.getElementById('color').value;
+            ctx.lineWidth = document.getElementById('size').value;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            [lastX, lastY] = [x, y];
+        });
+        canvas.addEventListener('mouseup', () => isDrawing = false);
+        document.getElementById('clear').addEventListener('click', initCanvas);
+
+        // --- BACKEND LOGIC (Fetch API) --- //
+
+        // 1. Load the current image when the page opens
+        async function fetchCurrentImage() {
+            try {
+                const response = await fetch(API_URL, {
+                    headers: { 'X-Master-Key': API_KEY }
+                });
+                const data = await response.json();
+                if (data.record && data.record.image) {
+                    currentDrawingImg.src = data.record.image;
+                } else {
+                    currentDrawingImg.alt = "No drawing has been submitted yet.";
+                }
+            } catch (err) {
+                console.error("Error fetching image:", err);
+                currentDrawingImg.alt = "Error loading image.";
+            }
+        }
+
+        // 2. Save the new image, overwriting the old one
+        async function saveImage() {
+            statusDiv.innerText = "Saving to server...";
+            const dataURL = canvas.toDataURL('image/png');
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Master-Key': API_KEY
+                    },
+                    body: JSON.stringify({ image: dataURL })
+                });
+
+                if (response.ok) {
+                    statusDiv.innerText = "Saved successfully!";
+                    initCanvas(); // Clear pad for next person
+                    fetchCurrentImage(); // Update display
+                    setTimeout(() => statusDiv.innerText = "", 3000);
+                } else {
+                    statusDiv.innerText = "Error saving.";
+                }
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerText = "Network error while saving.";
+            }
+        }
+
+        document.getElementById('submit').addEventListener('click', saveImage);
+        
+        // Initial load
+        fetchCurrentImage();
+    </script>
+</body>
+</html>
